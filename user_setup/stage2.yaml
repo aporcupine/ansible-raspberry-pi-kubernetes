@@ -1,0 +1,11 @@
+- hosts: all
+  become: true
+  tasks:
+    - name: kill everything running under user ubuntu
+      shell: killall -u ubuntu
+      ignore_errors: true
+    - name: remove the user 'ubuntu'
+      user:
+        name: ubuntu
+        state: absent
+        remove: yes

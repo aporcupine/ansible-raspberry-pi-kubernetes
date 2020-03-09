@@ -1,0 +1,148 @@
+- hosts: all
+  become: yes
+  tasks:
+    - name: update all packages to the latest version (this may take some time)
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: set hostnames using inventory new_hostname var
+      hostname:
+        name: "{{ new_hostname }}"
+
+    - name: test for cgroup_enable=memory
+      command: 'grep "cgroup_enable=memory" /boot/firmware/nobtcmd.txt'
+      register: cgroup_group
+      ignore_errors: yes
+
+    - name: add cgroup_enable=memory to nobtcmd.txt
+      lineinfile:
+        path: /boot/firmware/nobtcmd.txt
+        backrefs: True
+        state: present
+        regexp: '(.*)$'
+        line: '\1 cgroup_enable=memory'
+      when: cgroup_group.rc == 1
+
+    - name: add overlay to modules to load
+      lineinfile:
+        path: /etc/modules
+        line: overlay
+
+    - name: add br_netfilter to modules to load
+      lineinfile:
+        path: /etc/modules
+        line: br_netfilter
+    
+    - name: reboot the servers to apply cgroup change
+      reboot:
+
+    - name: install software-properties-common
+      apt:
+        name: software-properties-common
+        state: present
+
+    - name: add docker-ce key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: add docker-ce repo
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu eoan stable
+        state: present
+        filename: kubernetes
+    
+    - name: install docker-ce
+      apt:
+        name: ['containerd.io', 'docker-ce', 'docker-ce-cli']
+        state: present
+        update_cache: yes
+    
+    - name: Hold containerd.io
+      dpkg_selections:
+        name: containerd.io
+        selection: hold
+    
+    - name: Hold docker-ce
+      dpkg_selections:
+        name: docker-ce
+        selection: hold
+
+    - name: Hold docker-ce-cli
+      dpkg_selections:
+        name: docker-ce-cli
+        selection: hold
+  
+    - name: create docker.service.d dir
+      file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
+
+    - name: restart docker
+      service:
+        daemon_reload: yes
+        name: docker
+        enabled: yes
+        state: restarted
+    
+    - name: update apt cache
+      apt:
+        update_cache: yes
+
+    - name: install arptables
+      apt:
+        name: arptables
+        state: present
+    
+    - name: install ebtables
+      apt:
+        name: ebtables
+        state: present
+
+    - name: ensure we're not using nftables (1)
+      shell: update-alternatives --set iptables /usr/sbin/iptables-legacy
+    
+    - name: ensure we're not using nftables (2)
+      shell: update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+    
+    - name: ensure we're not using nftables (3)
+      shell: update-alternatives --set arptables /usr/sbin/arptables-legacy
+    
+    - name: ensure we're not using nftables (4)
+      shell: update-alternatives --set ebtables /usr/sbin/ebtables-legacy
+
+    - name: add k8s apt-key
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+    
+    - name: add k8s repo
+      apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+        filename: kubernetes
+    
+    - name: update apt cache
+      apt:
+        update_cache: yes
+
+    - name: install k8s
+      apt:
+        name: ['kubectl', 'kubelet', 'kubeadm']
+        state: present
+    
+    - name: Hold kubectl
+      dpkg_selections:
+        name: kubectl
+        selection: hold
+    
+    - name: Hold kubelet
+      dpkg_selections:
+        name: kubelet
+        selection: hold
+
+    - name: Hold kubeadm
+      dpkg_selections:
+        name: kubeadm
+        selection: hold

@@ -1,0 +1,30 @@
+- hosts: all
+  become: true
+  vars_prompt:
+    - name: "done_the_stuff"
+      prompt: "Ansible command: `--ask-become-pass --ask-pass -u ubuntu`\nLogged in, changed the password and installed Python (yes/no)?"
+      private: no
+    - name: "username"
+      prompt: "Enter username for new user"
+      private: no
+    - name: "user_password"
+      prompt: "Enter password for new user"
+      private: yes
+      encrypt: "sha512_crypt"
+      confirm: yes
+      salt_size: 7
+  tasks:
+    - name: Add the user "{{ username }}" with a bash shell, appending the group 'sudo' to the user's groups
+      user:
+        name: "{{ username }}"
+        shell: /bin/bash
+        groups: sudo
+        append: yes
+        password: "{{ user_password }}"
+      when: done_the_stuff | bool
+    - name: Set authorized key taken from file
+      authorized_key:
+        user: "{{ username }}"
+        state: present
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+      when: done_the_stuff | bool

@@ -1,0 +1,45 @@
+- hosts: controlplane
+  vars_prompt:
+    - name: "schedule_control_plane"
+      prompt: "Would you like to schedule pods on your control-plane node - recommended for small clusters (yes/no)?"
+      private: no
+  tasks:
+    - name: initialize the cluster
+      become: yes
+      shell: kubeadm init --pod-network-cidr=10.244.0.0/16
+
+    - name: create .kube directory
+      file:
+        path: $HOME/.kube
+        state: directory
+        mode: 0755
+
+    - name: copy admin.conf to user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "{{ lookup('env','HOME') }}/.kube/config"
+        remote_src: yes
+        owner: "{{ lookup('env','USER') }}"
+      become: yes
+    
+    - name: enable ability to schedule pods on the control-plane node (master)
+      shell: kubectl taint nodes --all node-role.kubernetes.io/master-
+      when: schedule_control_plane | bool
+
+    - name: install pod network add-on
+      shell: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/2140ac876ef134e0ed5af15c65e414cf26827915/Documentation/kube-flannel.yml
+
+    - name: get join command
+      become: yes
+      shell: kubeadm token create --print-join-command
+      register: join_command_raw
+
+    - name: set join command
+      set_fact:
+        join_command: "{{ join_command_raw.stdout_lines[0] }}"
+
+- hosts: workers
+  become: yes
+  tasks:
+    - name: join workers to cluster
+      shell: "{{ hostvars[groups['controlplane'][0]].join_command }}"

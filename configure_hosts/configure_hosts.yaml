@@ -101,16 +101,24 @@
         state: present
 
     - name: ensure we're not using nftables (1)
-      shell: update-alternatives --set iptables /usr/sbin/iptables-legacy
-    
+      alternatives:
+        name: iptables
+        path: /usr/sbin/iptables-legacy
+
     - name: ensure we're not using nftables (2)
-      shell: update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
-    
+      alternatives:
+        name: ip6tables
+        path: /usr/sbin/ip6tables-legacy
+
     - name: ensure we're not using nftables (3)
-      shell: update-alternatives --set arptables /usr/sbin/arptables-legacy
-    
+      alternatives:
+        name: arptables
+        path: /usr/sbin/arptables-legacy
+
     - name: ensure we're not using nftables (4)
-      shell: update-alternatives --set ebtables /usr/sbin/ebtables-legacy
+      alternatives:
+        name: ebtables
+        path: /usr/sbin/ebtables-legacy
 
     - name: add k8s apt-key
       apt_key:

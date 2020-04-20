@@ -17,9 +17,9 @@
     - name: copy admin.conf to user's kube config
       copy:
         src: /etc/kubernetes/admin.conf
-        dest: "{{ lookup('env','HOME') }}/.kube/config"
+        dest: "{{ ansible_env.HOME }}/.kube/config"
         remote_src: yes
-        owner: "{{ lookup('env','USER') }}"
+        owner: "{{ ansible_env.USER }}"
       become: yes
     
     - name: enable ability to schedule pods on the control-plane node (master)

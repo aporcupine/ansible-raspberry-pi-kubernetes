@@ -1,0 +1,85 @@
+- hosts: controlplane
+  become: no
+  vars_prompt:
+    - name: "metallb_ip_range"
+      prompt: "What IP would you like to use for MetalLB? e.g. '192.168.1.240-192.168.1.250'?"
+      private: no
+  tasks:
+
+    # Install MetalLB - https://metallb.universe.tf/
+    - name: enable strictARP for MetalLB
+      shell: >
+        kubectl get configmap kube-proxy -n kube-system -o yaml | \
+        sed -e "s/strictARP: false/strictARP: true/" | \
+        kubectl apply -f - -n kube-system
+            
+    - name: install MetalLB Step 1
+      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.5/manifests/namespace.yaml
+
+    - name: install MetalLB Step 2
+      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.5/manifests/metallb.yaml
+
+    - name: apply MetalLB config map
+      shell: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            namespace: metallb-system
+            name: config
+          data:
+            config: |
+              address-pools:
+              - name: default
+                protocol: layer2
+                addresses:
+                - {{ metallb_ip_range }}
+
+    - name: create MetalLB memberlist secret
+      shell: kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
+    
+    # Install Helm - https://helm.sh/
+    - name: add helm key
+      become: yes
+      apt_key:
+        url: https://baltocdn.com/helm/signing.asc
+        state: present
+
+    - name: add helm repo
+      become: yes
+      apt_repository:
+        repo: deb https://baltocdn.com/helm/stable/debian/ all main
+        state: present
+        filename: helm
+    
+    - name: install helm
+      become: yes
+      apt:
+        name: helm
+        state: present
+        update_cache: yes
+    
+    - name: add k8s helm repo
+      shell: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+      
+    - name: run helm update
+      shell: helm repo update
+
+    # Install nginx-ingress
+    - name: install internal ingress controller
+      shell: helm install internal ingress-nginx/ingress-nginx -f - -n ingress-nginx --create-namespace
+      args:
+        stdin: |
+          controller:
+            ingressClass: internal
+    
+    - name: install external ingress controller
+      shell: helm install external ingress-nginx/ingress-nginx -f - -n ingress-nginx --create-namespace
+      args:
+        stdin: |
+          controller:
+            ingressClass: external
+            replicaCount: 2
+    
+    

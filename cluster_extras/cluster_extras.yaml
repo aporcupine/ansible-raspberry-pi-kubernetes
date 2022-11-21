@@ -6,39 +6,6 @@
       private: no
   tasks:
 
-    # Install MetalLB - https://metallb.universe.tf/
-    - name: enable strictARP for MetalLB
-      shell: >
-        kubectl get configmap kube-proxy -n kube-system -o yaml | \
-        sed -e "s/strictARP: false/strictARP: true/" | \
-        kubectl apply -f - -n kube-system
-            
-    - name: install MetalLB Step 1
-      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.5/manifests/namespace.yaml
-
-    - name: install MetalLB Step 2
-      shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.5/manifests/metallb.yaml
-
-    - name: apply MetalLB config map
-      shell: kubectl apply -f -
-      args:
-        stdin: |
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            namespace: metallb-system
-            name: config
-          data:
-            config: |
-              address-pools:
-              - name: default
-                protocol: layer2
-                addresses:
-                - {{ metallb_ip_range }}
-
-    - name: create MetalLB memberlist secret
-      shell: kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
-    
     # Install Helm - https://helm.sh/
     - name: add helm key
       become: yes
@@ -59,27 +26,94 @@
         name: helm
         state: present
         update_cache: yes
+
+    # Install MetalLB - https://metallb.universe.tf/
+    - name: enable strictARP for MetalLB
+      shell: >
+        kubectl get configmap kube-proxy -n kube-system -o yaml | \
+        sed -e "s/strictARP: false/strictARP: true/" | \
+        kubectl apply -f - -n kube-system
     
-    - name: add k8s helm repo
+    - name: create MetalLB namespace
+      shell: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            labels:
+              app: metallb
+              pod-security.kubernetes.io/enforce: privileged
+              pod-security.kubernetes.io/audit: privileged
+              pod-security.kubernetes.io/warn: privileged
+            name: metallb-system
+
+    - name: add MetalLB helm repo
+      shell: helm repo add metallb https://metallb.github.io/metallb
+
+    - name: run helm update
+      shell: helm repo update
+
+    - name: install MetalLB and wait for it to complete
+      shell: helm upgrade --install metallb metallb/metallb --namespace metallb-system --wait
+   
+    - name: apply MetalLB config
+      shell: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: metallb.io/v1beta1
+          kind: IPAddressPool
+          metadata:
+            name: first-pool
+            namespace: metallb-system
+          spec:
+            addresses:
+            - {{ metallb_ip_range }}
+          ---
+          apiVersion: metallb.io/v1beta1
+          kind: L2Advertisement
+          metadata:
+            name: example
+            namespace: metallb-system
+
+    - name: create MetalLB memberlist secret
+      shell: kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
+    
+    # Install ingress-nginx
+    - name: add ingress-nginx helm repo
       shell: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
       
     - name: run helm update
       shell: helm repo update
 
-    # Install nginx-ingress
+    - name: create ingress namespace
+      shell: kubectl create namespace ingress-nginx
+
     - name: install internal ingress controller
-      shell: helm install internal ingress-nginx/ingress-nginx -f - -n ingress-nginx --create-namespace
+      shell: helm upgrade --install internal ingress-nginx/ingress-nginx -f - -n ingress-nginx
       args:
         stdin: |
           controller:
             ingressClass: internal
+            electionID: internal
+            ingressClassResource:
+              name: internal
+              enabled: true
+              default: true
+              controllerValue: "k8s.io/internal-ingress-nginx"
     
     - name: install external ingress controller
-      shell: helm install external ingress-nginx/ingress-nginx -f - -n ingress-nginx --create-namespace
+      shell: helm upgrade --install external ingress-nginx/ingress-nginx -f - -n ingress-nginx
       args:
         stdin: |
           controller:
             ingressClass: external
+            electionID: external
+            ingressClassResource:
+              name: external
+              enabled: true
+              default: false
+              controllerValue: "k8s.io/internal-ingress-nginx"
             replicaCount: 2
     
     

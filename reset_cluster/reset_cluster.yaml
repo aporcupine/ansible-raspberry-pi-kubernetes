@@ -1,0 +1,87 @@
+- hosts: all
+  become: yes
+  any_errors_fatal: true
+  tasks:
+    - name: revert kubeadm changes
+      become: yes
+      shell: kubeadm reset -f
+      ignore_errors: yes
+
+    - name: un-hold containerd.io
+      dpkg_selections:
+        name: containerd.io
+        selection: deinstall
+    
+    - name: un-hold docker-ce
+      dpkg_selections:
+        name: docker-ce
+        selection: deinstall
+
+    - name: un-hold docker-ce-cli
+      dpkg_selections:
+        name: docker-ce-cli
+        selection: deinstall
+
+    - name: remove docker-ce
+      apt:
+        name: [containerd.io, docker-ce, docker-ce-cli]
+        state: absent
+
+    - name: remove docker-ce repo
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu eoan stable
+        state: absent
+        filename: kubernetes
+    
+    - name: un-hold kubectl
+      dpkg_selections:
+        name: kubectl
+        selection: deinstall
+  
+    - name: un-hold kubelet
+      dpkg_selections:
+        name: kubelet
+        selection: deinstall
+
+    - name: un-hold kubeadm
+      dpkg_selections:
+        name: kubeadm
+        selection: deinstall
+
+    - name: uninstall k8s
+      apt:
+        name: [kubectl, kubelet, kubeadm]
+        state: absent
+
+    - name: remove k8s repo
+      apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: absent
+        filename: kubernetes
+    
+    - name: uninstall containerd
+      apt:
+        name: [containerd]
+        state: absent
+
+    - name: add containerd repo
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu focal stable
+        state: absent
+        filename: containerd
+    
+    - name: clean network plugin files
+      file:
+        state: absent
+        path: "/etc/cni/net.d/"
+    
+    - name: uninstall helm
+      apt:
+        name: helm
+        state: absent
+
+    - name: remove helm repo
+      apt_repository:
+        repo: deb https://baltocdn.com/helm/stable/debian/ all main
+        state: absent
+        filename: helm

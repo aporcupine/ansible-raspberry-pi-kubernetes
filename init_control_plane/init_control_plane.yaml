@@ -3,10 +3,24 @@
     - name: "schedule_control_plane"
       prompt: "Would you like to schedule pods on your control-plane node - recommended for small clusters (yes/no)?"
       private: no
+
   tasks:
+    - name: create kubeadm init config file for setting cgroup driver + pod network subnet
+      copy:
+        dest: "/tmp/config.yaml"
+        content: |
+          apiVersion: kubelet.config.k8s.io/v1beta1
+          kind: KubeletConfiguration
+          cgroupDriver: systemd
+          ---
+          apiVersion: kubeadm.k8s.io/v1beta2
+          kind: ClusterConfiguration
+          networking:
+            podSubnet: 10.244.0.0/16
+
     - name: initialize the cluster
       become: yes
-      shell: kubeadm init --pod-network-cidr=10.244.0.0/16
+      shell: kubeadm init --cri-socket /run/containerd/containerd.sock --config /tmp/config.yaml
 
     - name: create .kube directory
       file:
@@ -27,19 +41,4 @@
       when: schedule_control_plane | bool
 
     - name: install pod network add-on
-      shell: kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/2140ac876ef134e0ed5af15c65e414cf26827915/Documentation/kube-flannel.yml
-
-    - name: get join command
-      become: yes
-      shell: kubeadm token create --print-join-command
-      register: join_command_raw
-
-    - name: set join command
-      set_fact:
-        join_command: "{{ join_command_raw.stdout_lines[0] }}"
-
-- hosts: workers
-  become: yes
-  tasks:
-    - name: join workers to cluster
-      shell: "{{ hostvars[groups['controlplane'][0]].join_command }}"
+      shell: kubectl apply -f https://raw.githubusercontent.com/cloudnativelabs/kube-router/master/daemonset/kubeadm-kuberouter.yaml

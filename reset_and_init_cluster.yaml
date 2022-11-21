@@ -1,0 +1,5 @@
+- import_playbook: reset_cluster/reset_cluster.yaml
+- import_playbook: configure_hosts/configure_hosts.yaml
+- import_playbook: init_control_plane/init_control_plane.yaml
+- import_playbook: init_workers/init_workers.yaml
+- import_playbook: cluster_extras/cluster_extras.yaml

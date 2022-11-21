@@ -54,8 +54,8 @@
     - name: run helm update
       shell: helm repo update
 
-    - name: install MetalLB
-      shell: helm install metallb metallb/metallb --namespace metallb-system
+    - name: install MetalLB and wait for it to complete
+      shell: helm upgrade --install metallb metallb/metallb --namespace metallb-system --wait
    
     - name: apply MetalLB config
       shell: kubectl apply -f -
@@ -90,18 +90,30 @@
       shell: kubectl create namespace ingress-nginx
 
     - name: install internal ingress controller
-      shell: helm install internal ingress-nginx/ingress-nginx -f - -n ingress-nginx
+      shell: helm upgrade --install internal ingress-nginx/ingress-nginx -f - -n ingress-nginx
       args:
         stdin: |
           controller:
             ingressClass: internal
+            electionID: internal
+            ingressClassResource:
+              name: internal
+              enabled: true
+              default: true
+              controllerValue: "k8s.io/internal-ingress-nginx"
     
     - name: install external ingress controller
-      shell: helm install external ingress-nginx/ingress-nginx -f - -n ingress-nginx
+      shell: helm upgrade --install external ingress-nginx/ingress-nginx -f - -n ingress-nginx
       args:
         stdin: |
           controller:
             ingressClass: external
+            electionID: external
+            ingressClassResource:
+              name: external
+              enabled: true
+              default: false
+              controllerValue: "k8s.io/internal-ingress-nginx"
             replicaCount: 2
     
     

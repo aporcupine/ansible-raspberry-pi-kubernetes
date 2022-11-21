@@ -11,13 +11,13 @@
         name: "{{ new_hostname }}"
 
     - name: test for cgroup_enable=memory
-      command: 'grep "cgroup_enable=memory" /boot/firmware/nobtcmd.txt'
+      command: 'grep "cgroup_enable=memory" /boot/firmware/cmdline.txt'
       register: cgroup_group
       ignore_errors: yes
 
     - name: add cgroup_enable=memory to nobtcmd.txt
       lineinfile:
-        path: /boot/firmware/nobtcmd.txt
+        path: /boot/firmware/cmdline.txt
         backrefs: True
         state: present
         regexp: '(.*)$'
@@ -34,61 +34,71 @@
         path: /etc/modules
         line: br_netfilter
     
+    - name: set net.bridge.bridge-nf-call-iptables to 1
+      sysctl:
+        name: net.bridge.bridge-nf-call-iptables
+        value: '1'
+        sysctl_file: /etc/sysctl.d/99-kubernetes-cri.conf
+        state: present
+      
+    - name: set net.ipv4.ip_forward to 1
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        sysctl_file: /etc/sysctl.d/99-kubernetes-cri.conf
+        state: present
+
+    - name: set net.bridge.bridge-nf-call-ip6tables to 1
+      sysctl:
+        name:  net.bridge.bridge-nf-call-ip6tables
+        value: '1'
+        sysctl_file: /etc/sysctl.d/99-kubernetes-cri.conf
+        state: present
+    
     - name: reboot the servers to apply cgroup change
       reboot:
 
     - name: install software-properties-common
       apt:
-        name: software-properties-common
+        name: [apt-transport-https, ca-certificates, curl, software-properties-common]
         state: present
 
-    - name: add docker-ce key
+    - name: add containerd key
       apt_key:
         url: https://download.docker.com/linux/ubuntu/gpg
         state: present
 
-    - name: add docker-ce repo
+    - name: add containerd repo
       apt_repository:
-        repo: deb https://download.docker.com/linux/ubuntu eoan stable
+        repo: deb https://download.docker.com/linux/ubuntu focal stable
         state: present
-        filename: kubernetes
+        filename: containerd
     
-    - name: install docker-ce
-      apt:
-        name: ['containerd.io', 'docker-ce', 'docker-ce-cli']
-        state: present
-        update_cache: yes
-    
-    - name: Hold containerd.io
-      dpkg_selections:
-        name: containerd.io
-        selection: hold
-    
-    - name: Hold docker-ce
-      dpkg_selections:
-        name: docker-ce
-        selection: hold
-
-    - name: Hold docker-ce-cli
-      dpkg_selections:
-        name: docker-ce-cli
-        selection: hold
-  
-    - name: create docker.service.d dir
+    - name: create containerd dir
       file:
-        path: /etc/systemd/system/docker.service.d
+        path: /etc/containerd/
         state: directory
+    
+    - name: install containerd.io
+      apt:
+        name: containerd.io
+        state: present
 
-    - name: restart docker
+    - name: set default containerd config
+      shell: containerd config default > /etc/containerd/config.toml
+
+    - name: set cgroup driver to systemd
+      lineinfile:
+        path: /etc/containerd/config.toml
+        insertafter: '\[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options\]'
+        line: SystemdCgroup = true
+
+    - name: restart containerd
       service:
         daemon_reload: yes
-        name: docker
+        name: containerd
         enabled: yes
         state: restarted
-    
-    - name: update apt cache
-      apt:
-        update_cache: yes
 
     - name: install arptables
       apt:
@@ -130,10 +140,7 @@
         repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
         state: present
         filename: kubernetes
-    
-    - name: update apt cache
-      apt:
-        update_cache: yes
+        update_cache_retries: 20 # k8s repo sometimes 404s https://github.com/kubernetes/kubernetes/issues/97264
 
     - name: install k8s
       apt:
